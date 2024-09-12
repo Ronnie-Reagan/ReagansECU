@@ -8,13 +8,17 @@ local vehicleDataFilename = "Reagans_ECU_User_Vehicles.json"
 
 -- avoid adding things to this table, the merge function only adds things to the saved settings
 local settings = {
-    version = 1.62,
+    version = 1.64,
     odometer = {
         autorun = false,
         delay = 0.25
     },
     debugMode = false,
     debugLogging = false,
+    debugSettings = {
+        maxLogSize = 1000,
+        delay = 0.01,
+    },
     userPrints = true,
     tuner = {
         autoTune = true,
@@ -710,110 +714,36 @@ local vehicleHashes = {
 
 --#region DebugLogging Functions
 
-local debugLogFileName = "Reagans_ECU_Debug_Log.json"
-local secondaryDebugLogFileName = "Reagans_ECU_Debug_Log_2.json"
+local Debug = {
+    debugLogFileName = "testDebugLog1.json",
+    secondaryDebugLogFileName = "testDebugLog2.json",
+    stop = false,
+    autoStop = true,
+    limit = 100,
+    secondaryDebugFileContents = { pageNumber = 2, logs = {} },
+    primaryDebugFileContents = { pageNumber = 1, logs = {} }
+}
 
-local DebugLog = { pageNumber = 1 }
-local Debug = {}
+-- Initialize the debug log with pageNumber and logs table
+local debugLog = { pageNumber = 1, logs = {} }
 
+-- Adds a log entry with a unique log number and formatted arguments
 function Debug:log(...)
-    local currentLogCount = #DebugLog - 1             -- subtract one for the page number variable
-    local logNumber = tostring((currentLogCount + 1)) -- add it back for new log insertion
-    local args = { ... }
-    local printable = "[(LOG: " .. logNumber .. "): "
+    local currentLogCount = Debug:getLogCount(debugLog.logs) -- Get current count of logs
+    local logNumber = tostring(currentLogCount + 1)          -- Increment log count for new log number
+    local args = { ... }                                     -- Capture all passed arguments
+    local printable = "[(LOG: " .. logNumber .. "): "        -- Start of the log message format
+
+    -- Format each argument into the log string with separators
     for i, v in ipairs(args) do
         printable = printable .. tostring(v)
         if i < #args then
-            printable = printable .. " ]"
+            printable = printable .. " | " -- Separator between log entries
         end
     end
-    local enclosedLog = { printable }
-    table.insert(DebugLog, enclosedLog)
-end
+    printable = printable .. "]"           -- Close the log message
 
-function Debug:loadDebugLogs()
-    local successLoadingSecondaryDebugFile, secondaryDebugFileContents = pcall(function()
-        return json.loadfile(
-            secondaryDebugLogFileName)
-    end)
-    local successLoadingDebugFile, debugFileContents = pcall(function() return json.loadfile(debugLogFileName) end)
-
-    if successLoadingDebugFile then
-        local debugOneFull = #debugFileContents > 2000
-        local debugTwoFull = false
-        if successLoadingSecondaryDebugFile then
-            debugTwoFull = #secondaryDebugFileContents > 2000
-        end
-        if #debugFileContents > 2000 and not successLoadingSecondaryDebugFile then
-            print("Debug File Full! Creating a new file labeled: " .. secondaryDebugLogFileName)
-            DebugLog = { pageNumber = 2 }
-            json.savefile(secondaryDebugLogFileName, DebugLog)
-        elseif debugOneFull and successLoadingSecondaryDebugFile and not debugTwoFull then
-            print("Found Secondary Debug File! Loading it now")
-            DebugLog = secondaryDebugFileContents
-        elseif debugOneFull and successLoadingSecondaryDebugFile and debugTwoFull then
-            print("Both Files Are Full!!, removing the oldest entries now.")
-            local oneIsOlder = debugFileContents.pageNumber < secondaryDebugFileContents.pageNumber
-            if oneIsOlder then
-                local newPageNumber = debugFileContents.pageNumber + 2
-                DebugLog = { pageNumber = newPageNumber }
-                json.savefile(debugLogFileName, DebugLog)
-            else
-                local newPageNumber = secondaryDebugFileContents.pageNumber + 2
-                DebugLog = { pageNumber = newPageNumber }
-                json.savefile(secondaryDebugLogFileName, DebugLog)
-            end
-        end
-    else
-        print("No Debug Log found! Creating a new one now.")
-        local success, results = pcall(function() json.savefile(debugLogFileName, DebugLog) end)
-        if success then
-            print("Debug Log Initialized and saved.")
-        else
-            print("Error initializing debug log file: " .. tostring(results))
-        end
-    end
-end
-
-function Debug:saveDebugLogs()
-    local successLoadingOne, contentsOfOne = pcall(function() return json.loadfile(debugLogFileName) end)
-    local successLoadingTwo, contentsOfTwo = pcall(function() return json.loadfile(secondaryDebugLogFileName) end)
-    local fileOnePageNumber = 1
-    local fileTwoPageNumber = 2
-    if successLoadingOne then
-        fileOnePageNumber = contentsOfOne.pageNumber
-    end
-    if successLoadingTwo then
-        fileTwoPageNumber = contentsOfTwo.pageNumber
-    end
-    if fileOnePageNumber > fileTwoPageNumber then
-        -- next page is an odd number in file one
-        local newPageNumber = fileOnePageNumber + 2
-        DebugLog = { pageNumber = newPageNumber }
-        json.savefile(debugLogFileName, DebugLog)
-    else
-        -- next page is an even number in file two
-        local newPageNumber = fileTwoPageNumber + 2
-        DebugLog = { pageNumber = newPageNumber }
-        json.savefile(secondaryDebugLogFileName, DebugLog)
-    end
-end
-
---#endregion
-
--- Prints notifications
-local function notify(...)
-    if settings.userPrints then
-        local args = { ... }
-        local printable = "[NOTIFY] "
-        for i, v in ipairs(args) do
-            printable = printable .. tostring(v)
-            if i < #args then
-                printable = printable .. " "
-            end
-        end
-        print(printable)
-    end
+    table.insert(debugLog.logs, printable) -- Add formatted log to the logs table
 end
 
 -- Prints debug messages
@@ -834,9 +764,162 @@ local function debugPrint(...)
     end
 end
 
+-- Loads debug logs from primary and secondary files; initializes defaults if files don't exist
+function Debug:loadDebugLogs()
+    -- Function to load a log file or initialize it if loading fails
+    local function loadLogFile(fileName, defaultPageNumber)
+        local success, contents = pcall(function() return json.loadfile(fileName) end)
+        if not success then
+            -- Log loading failed, so initialize a default log structure
+            debugPrint("[ERROR] Failed to load debug log file: " .. tostring(contents))
+            contents = { pageNumber = defaultPageNumber, logs = {} }
+            local saveSuccess, errorMessage = pcall(function() json.savefile(fileName, contents) end)
+            if not saveSuccess then
+                debugPrint("[ERROR] Failed to save debug log file: " .. tostring(errorMessage))
+            else
+                debugPrint(fileName .. " log file saved successfully.")
+            end
+        end
+        return contents -- Return the loaded or default contents
+    end
+
+    sleep(settings.debugSettings.delay) -- Pause between I/O operations to reduce load
+
+    -- Load primary and secondary debug logs
+    Debug.primaryDebugFileContents = loadLogFile(Debug.debugLogFileName, 1)            -- Load primary log
+    Debug.secondaryDebugFileContents = loadLogFile(Debug.secondaryDebugLogFileName, 2) -- Load secondary log
+end
+
+-- Counts and returns the number of logs in the given log table
+function Debug:getLogCount(logsTable)
+    return #logsTable -- Uses Lua's # operator to count entries in the table
+end
+
+-- Saves debug logs to primary or secondary files based on conditions; overwrites older logs if both are full
+function Debug:saveDebugLogs()
+    -- Load a log file or initialize if not present
+    local function loadOrInitializeLog(fileName, defaultPageNumber)
+        local success, contents = pcall(function() return json.loadfile(fileName) end)
+        if not success then
+            -- If loading fails, initialize a default log
+            debugPrint("[ERROR] Failed to load log file: " .. tostring(contents))
+            contents = { pageNumber = defaultPageNumber, logs = {} }
+        end
+        return contents -- Return loaded or initialized log contents
+    end
+
+    sleep(settings.debugSettings.delay) -- Delay for I/O operation pacing
+
+    -- Load primary and secondary logs
+    Debug.primaryDebugFileContents = loadOrInitializeLog(Debug.debugLogFileName, 1)
+    Debug.secondaryDebugFileContents = loadOrInitializeLog(Debug.secondaryDebugLogFileName, 2)
+
+    -- Check if log files have reached their maximum size
+    local debugOneFull = Debug:getLogCount(Debug.primaryDebugFileContents.logs) >= settings.debugSettings.maxLogSize
+    local debugTwoFull = Debug:getLogCount(Debug.secondaryDebugFileContents.logs) >= settings.debugSettings.maxLogSize
+
+    local fileOnePageNumber = Debug.primaryDebugFileContents.pageNumber
+    local fileTwoPageNumber = Debug.secondaryDebugFileContents.pageNumber
+
+    sleep(settings.debugSettings.delay) -- Another settings.debugSettings.maxLogSize to avoid I/O race conditions
+
+    -- Determine where to save logs based on fullness and page number comparisons
+    if debugOneFull and not debugTwoFull then
+        -- Save to secondary if primary is full but secondary is not
+        Debug:saveLogFile(Debug.secondaryDebugLogFileName, Debug.secondaryDebugFileContents, "Secondary")
+    elseif debugOneFull and debugTwoFull then
+        -- Both logs are full, so overwrite the older one
+        debugPrint("Saving to olderLog")
+        Debug:overwriteOlderLog(Debug.primaryDebugFileContents, Debug.secondaryDebugFileContents, fileOnePageNumber,
+            fileTwoPageNumber)
+    else
+        debugPrint("Saving to log based on page number")
+        -- Save to whichever log is less full or has the appropriate page number
+        Debug:saveBasedOnPageNumber(Debug.primaryDebugFileContents, Debug.secondaryDebugFileContents, fileOnePageNumber,
+            fileTwoPageNumber)
+    end
+    if Debug:getLogCount(debugLog) > settings.debugSettings.maxLogSize then
+        debugPrint("Log count:", Debug.getLogCount(debugLog), "Current Limit:", settings.debugSettings.maxLogSize, "\nResetting Local Logs Now")
+        debugLog.logs = {}
+    end
+    debugPrint("Saving Logs Now: Table Contents: " .. tostring(#debugLog.logs))
+end
+
+-- Saves log contents to the specified file and reports the operation status
+function Debug:saveLogFile(fileName, logContents, logType)
+    logContents.logs = debugLog.logs -- Assign current logs to the target log content
+    local success, errorMessage = pcall(function() json.savefile(fileName, logContents) end)
+    if not success then
+        -- Log any errors encountered during the save operation
+        debugPrint("[ERROR] Failed to save " .. logType .. " debug log file: " .. tostring(errorMessage))
+    else
+        debugPrint(logType .. " debug log file saved successfully.")
+    end
+end
+
+-- Overwrites the older log file when both primary and secondary logs are full
+function Debug:overwriteOlderLog(primaryLog, secondaryLog, fileOnePageNumber, fileTwoPageNumber)
+    debugPrint("Both Debug Files Are Full!! Overwriting the oldest entries now.")
+    if fileOnePageNumber < fileTwoPageNumber then
+        debugPrint("based on oldest file, overwriting primary")
+        -- Primary log is older, so overwrite it
+        primaryLog.logs = debugLog.logs               -- Clear old logs and overwrite with new logs
+        primaryLog.pageNumber = fileTwoPageNumber + 1 -- Increment page number for tracking
+        Debug:saveLogFile(Debug.debugLogFileName, primaryLog, "Primary")
+    else
+        debugPrint("based on oldest file, overwriting secondary")
+        -- Secondary log is older, so overwrite it
+        secondaryLog.logs = debugLog.logs               -- Clear old logs and overwrite with new logs
+        secondaryLog.pageNumber = fileOnePageNumber + 1 -- Increment page number for tracking
+        Debug:saveLogFile(Debug.secondaryDebugLogFileName, secondaryLog, "Secondary")
+    end
+end
+
+-- Saves logs based on page number comparison to determine which file to update
+function Debug:saveBasedOnPageNumber(primaryLog, secondaryLog, fileOnePageNumber, fileTwoPageNumber)
+    if fileOnePageNumber > fileTwoPageNumber or (fileOnePageNumber == 1 and Debug:getLogCount(primaryLog.logs) < settings.debugSettings.maxLogSize) then
+        debugPrint("based on page number or file 1 is page one and under Debug.limit, saving to primary")
+        -- Save to primary if it has a higher page number or is not full and is the starting log
+        Debug:saveLogFile(Debug.debugLogFileName, primaryLog, "Primary")
+    else
+        debugPrint("based on page number or file 1 is page one and under Debug.limit, saving to secondary")
+        -- Otherwise, save to secondary
+        Debug:saveLogFile(Debug.secondaryDebugLogFileName, secondaryLog, "Secondary")
+    end
+end
+
+--#endregion
+
+-- Prints notifications
+local function notify(...)
+    if settings.userPrints then
+        local args = { ... }
+        local printable = "[NOTIFY] "
+        for i, v in ipairs(args) do
+            printable = printable .. tostring(v)
+            if i < #args then
+                printable = printable .. " "
+            end
+        end
+        print(printable)
+    end
+end
+
 -- rip you a new one
+local counter = 0
 local function rip()
-    print("sup")
+    print("If you press me 100 times you get a surprise!")
+    counter = counter + 1
+    if counter >= 100 then
+        print("SURPRISE!")
+        sleep(3.9)
+        local success, results = pcall(function() menu.clear() menu.add_action("RESTART YOUR MENU",  function() print("i bet youre suprised") end) end)
+        if success then
+            menu.add_action("Are You Suprised?", function() print("i bet youre suprised") end)
+        else
+            menu.add_action("Are You Suprised?",  function() print("i bet youre suprised") end)
+        end
+    end
 end
 
 --#endregion
@@ -1009,6 +1092,7 @@ function reagansECU:updateOdometer()
                         debugPrint("Error saving vehicle data:", err, "Trying Again Soon.")
                         updatesSkipped = saveTimer / 2
                     else
+                        sleep(settings.debugSettings.delay)
                         Debug:saveDebugLogs()
                         debugPrint("Vehicle data updated and saved.")
                         updatesSkipped = 0
@@ -1317,14 +1401,18 @@ end
 -- Initialize settings on script load
 menu.register_callback("OnScriptsLoaded",
     function()
+        debugPrint("Loading Debug Logs")
         Debug:loadDebugLogs()
-        utilities:loadUserSettings()
+        debugPrint("Loading User Vehicles")
         loadUserVehiclesData()
+        debugPrint("Loading Vehicles Submenu")
         populateUserVehicleSubmenu()
         if settings.odometer.autorun == true then
+            debugPrint("Starting Odometer")
             reagansECU:startOdometer()
         end
         if settings.tuner.autoStart == true then
+            debugPrint("Starting Tuner")
             reagansECU:startTuner()
         end
         showWelcomeMessage()
@@ -1642,10 +1730,11 @@ odometerMenu:add_action("Start Trip B",
 odometerMenu:add_action("Current Reading",
     function()
         if localplayer and localplayer:is_in_vehicle() then
-            local currentModelHash = localplayer:get_current_vehicle():get_model_hash()
-            local vehicleFound, vehicleTable = reagansECU:findOrAddVehicle(currentModelHash)
-            if vehicleFound and vehicleTable ~= nil and vehicleTable == type("table") then
-                notify("Current odometer reading:", vehicleTable.odometer, "miles.")
+            local currentVehicle = localplayer:get_current_vehicle()
+            local currentModelHash = currentVehicle:get_model_hash()
+            local foundVehicle = reagansECU:findOrAddVehicle(currentModelHash)
+            if foundVehicle and foundVehicle ~= nil then
+                notify("Current odometer reading:", foundVehicle.odometer, "miles.")
             else
                 notify("No current vehicle data available.")
             end
@@ -1667,7 +1756,7 @@ odometerMenu:add_action("Top 10 Highest Speeds",
         for i = 1, math.min(10, #userVehicles) do
             table.insert(topTen, userVehicles[i].name .. ": " .. userVehicles[i].highestSpeed .. " MPH")
         end
-        notify("Top Ten Fastest Accelerations:\n" .. table.concat(topTen, "\n"))
+        notify("Top Ten Highest Speeds Reached:\n" .. table.concat(topTen, "\n"))
     end
 )
 
@@ -1676,12 +1765,14 @@ odometerMenu:add_action("Top 10 Accelerations",
         local userVehicles = userOwnedVehicles
         table.sort(userVehicles,
             function(a, b)
-                return a.bestZeroToSixty > b.bestZeroToSixty
+                return a.bestZeroToSixty < b.bestZeroToSixty
             end
         )
         local topTen = {}
         for i = 1, math.min(10, #userVehicles) do
-            table.insert(topTen, userVehicles[i].name .. ": " .. userVehicles[i].bestZeroToSixty .. " seconds")
+            if userVehicles[i].bestZeroToSixty > 0.0 then
+                table.insert(topTen, userVehicles[i].name .. ": " .. userVehicles[i].bestZeroToSixty .. " seconds")
+            end
         end
         notify("Top Ten Fastest Accelerations:\n" .. table.concat(topTen, "\n"))
     end
@@ -1697,7 +1788,7 @@ odometerMenu:add_action("Top 10 Odometer Readings",
         )
         local topTen = {}
         for i = 1, math.min(10, #userVehicles) do
-            table.insert(topTen, userVehicles[i].name .. ": " .. userVehicles[i].odometer .. " miles")
+            table.insert(topTen, userVehicles[i].name .. ": " .. userVehicles[i].odometer .. " Miles")
         end
         notify("Top 10 vehicles by odometer:\n" .. table.concat(topTen, "\n"))
     end
@@ -1725,44 +1816,7 @@ odometerMenu:add_action("Print All Vehicle Data",
 -- Settings Submenu
 local settingsMenu = mainmenu:add_submenu("Settings")
 
--- Debugging Submenu
-
-local debugMenu = settingsMenu:add_submenu("Debugging")
-
--- controld debug prints to the console
-debugMenu:add_toggle("Debug Prints",
-    function()
-        return settings.debugMode
-    end,
-    function(bool)
-        settings.debugMode = bool
-        utilities:saveUserSettings()
-    end
-)
-
--- controls logging of debug prints, regardless of print settings
-debugMenu:add_toggle("Debug Logging",
-    function()
-        return settings.debugLogging
-    end,
-    function(bool)
-        settings.debugLogging = bool
-        utilities:saveUserSettings()
-    end
-)
-
-settingsMenu:add_toggle("User Notifications",
-    function()
-        return settings.userPrints
-    end,
-    function(bool)
-        settings.userPrints = bool
-        utilities:saveUserSettings()
-    end
-)
-
 -- Tunes Submenu
-
 local tunesSettings = settingsMenu:add_submenu("Tuner Settings")
 
 -- controls automatically tuning a vehicle
@@ -1809,6 +1863,49 @@ odometerSettings:add_toggle("Automatic Mode",
         settings.odometer.autorun = value
         utilities:saveUserSettings()
         notify("Odometer autorun set to " .. tostring(value))
+    end
+)
+
+-- Debugging Submenu
+local debugMenu = settingsMenu:add_submenu("Debugging")
+
+-- controld debug prints to the console
+debugMenu:add_toggle("Debug Prints",
+    function()
+        return settings.debugMode
+    end,
+    function(bool)
+        settings.debugMode = bool
+        utilities:saveUserSettings()
+    end
+)
+
+
+local debugLoggingSettingsMenu = debugMenu:add_submenu("Debug Logging Settings")
+-- Utility functions for adjusting test parameters via the menu
+local getDelay = function() return settings.debugSettings.delay end
+local setDelay = function(value) settings.debugSettings.delay = value utilities:saveUserSettings() end
+local getMaxFileSize = function() return settings.debugSettings.maxLogSize end
+local setgetMaxFileSize = function(value) settings.debugSettings.maxLogSize = value utilities:saveUserSettings() end
+local getDebugLoggingState = function() return settings.debugLogging end
+local setDebugLoggingState = function(bool) settings.debugLogging = bool utilities:saveUserSettings() end
+
+function addDebugSettingsMenu()
+-- controls logging of debug prints, regardless of print settings
+    debugLoggingSettingsMenu:add_toggle("Debug Logging", getDebugLoggingState, setDebugLoggingState)
+    debugLoggingSettingsMenu:add_int_range("Max File Size", 100, 100, 10000, getMaxFileSize, setgetMaxFileSize)
+    debugLoggingSettingsMenu:add_float_range("File Operation Delay", 0.01, 0.01, 1, getDelay, setDelay)
+end
+
+addDebugSettingsMenu()
+
+settingsMenu:add_toggle("User Notifications",
+    function()
+        return settings.userPrints
+    end,
+    function(bool)
+        settings.userPrints = bool
+        utilities:saveUserSettings()
     end
 )
 
@@ -1877,6 +1974,7 @@ creditsMenu:add_action("Expert Help",
     end
 )
 
-
-
 --#endregion
+
+debugPrint("Loading Settings")
+utilities:loadUserSettings()
