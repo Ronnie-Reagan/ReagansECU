@@ -8,7 +8,7 @@ local vehicleDataFilename = "Reagans_ECU_User_Vehicles.json"
 
 -- avoid adding things to this table, the merge function only adds things to the saved settings
 local settings = {
-    version = 1.64,
+    version = 1.65,
     odometer = {
         autorun = false,
         delay = 0.25
@@ -22,7 +22,8 @@ local settings = {
     userPrints = true,
     tuner = {
         autoTune = true,
-        autorun = true
+        autorun = true,
+        autoTuneDelay = 1
     },
     timesLoaded = 0
 }
@@ -75,8 +76,7 @@ local credits = {
         "\n" ..
         "-Don Reagan\n" ..
         "Discord: keef_it_up\n",
-    QA =
-    "\nQuality Assurance Specialist: NO TESTER\n",
+    QA = "\nQuality Assurance Specialist: NO TESTER\n",
     expert =
         "\n\nExpert: Gaymer\n" ..
         "Without your help I would still be sitting around wondering what it would be like to develop my own scripts.\n" ..
@@ -839,7 +839,8 @@ function Debug:saveDebugLogs()
             fileTwoPageNumber)
     end
     if Debug:getLogCount(debugLog) > settings.debugSettings.maxLogSize then
-        debugPrint("Log count:", Debug.getLogCount(debugLog), "Current Limit:", settings.debugSettings.maxLogSize, "\nResetting Local Logs Now")
+        debugPrint("Log count:", Debug.getLogCount(debugLog), "Current Limit:", settings.debugSettings.maxLogSize,
+            "\nResetting Local Logs Now")
         debugLog.logs = {}
     end
     debugPrint("Saving Logs Now: Table Contents: " .. tostring(#debugLog.logs))
@@ -913,11 +914,14 @@ local function rip()
     if counter >= 100 then
         print("SURPRISE!")
         sleep(3.9)
-        local success, results = pcall(function() menu.clear() menu.add_action("RESTART YOUR MENU",  function() print("i bet youre suprised") end) end)
+        local success, results = pcall(function()
+            menu.clear()
+            menu.add_action("RESTART YOUR MENU", function() print("i bet youre suprised") end)
+        end)
         if success then
             menu.add_action("Are You Suprised?", function() print("i bet youre suprised") end)
         else
-            menu.add_action("Are You Suprised?",  function() print("i bet youre suprised") end)
+            menu.add_action("Are You Suprised?", function() print("i bet youre suprised") end)
         end
     end
 end
@@ -1178,14 +1182,9 @@ function reagansECU:startTuner()
     if not tempMemory.tuner.started then
         notify("Tuner is starting!")
         tempMemory.tuner.started = true
-        tempMemory.tuner.running = false
         repeat
-            if not tempMemory.tuner.running then
-                tempMemory.tuner.running = true
-                reagansECU:tuneCurrentVehicle()
-                tempMemory.tuner.running = false
-                sleep(1)
-            end
+            reagansECU:tuneCurrentVehicle()
+            sleep(settings.tuner.autoTuneDelay)
         until not tempMemory.tuner.started
         notify("Tuner is already started!")
     end
@@ -1687,12 +1686,10 @@ odometerMenu:add_action("Start Trip A",
     function()
         if localplayer and localplayer:is_in_vehicle() then
             local currentVehicle = localplayer:get_current_vehicle()
-            local success, foundTable = pcall(function()
-                return reagansECU:findOrAddVehicle(currentVehicle
-                    :get_model_hash())
-            end)
-            if success and foundTable ~= nil and foundTable == type("table") then
-                local currentTripCount = foundTable.trips.a
+            local currentModelHash = currentVehicle:get_model_hash()
+            local foundVehicle = reagansECU:findOrAddVehicle(currentModelHash)
+            if foundVehicle ~= nil and foundVehicle.trips ~= nil then
+                local currentTripCount = foundVehicle.trips.a
                 for i, value in ipairs(userOwnedVehicles) do
                     if value and value.trips.a == currentTripCount then
                         value.trips.a = 0
@@ -1700,7 +1697,7 @@ odometerMenu:add_action("Start Trip A",
                     end
                 end
             else
-                debugPrint("Error:", table)
+                debugPrint("Trips was nil")
             end
         end
     end
@@ -1710,18 +1707,18 @@ odometerMenu:add_action("Start Trip B",
     function()
         if localplayer and localplayer:is_in_vehicle() then
             local currentVehicle = localplayer:get_current_vehicle()
-            local success, foundTable = pcall(function()
-                return reagansECU:findOrAddVehicle(currentVehicle
-                    :get_model_hash())
-            end)
-            if success and foundTable ~= nil and foundTable == type("table") then
-                local currentTripCount = foundTable.trips.b
+            local currentModelHash = currentVehicle:get_model_hash()
+            local foundVehicle = reagansECU:findOrAddVehicle(currentModelHash)
+            if foundVehicle ~= nil and foundVehicle.trips ~= nil then
+                local currentTripCount = foundVehicle.trips.b
                 for i, value in ipairs(userOwnedVehicles) do
                     if value and value.trips.b == currentTripCount then
                         value.trips.b = 0
                         saveUserVehiclesData()
                     end
                 end
+            else
+                debugPrint("Trips was nil")
             end
         end
     end
@@ -1744,237 +1741,285 @@ odometerMenu:add_action("Current Reading",
     end
 )
 
+-- Function to display top 10 highest speeds using ASCII characters
 odometerMenu:add_action("Top 10 Highest Speeds",
     function()
-        local userVehicles = userOwnedVehicles
-        table.sort(userVehicles,
-            function(a, b)
-                return a.highestSpeed > b.highestSpeed
-            end
-        )
+        table.sort(userOwnedVehicles, function(a, b)
+            return a.highestSpeed > b.highestSpeed
+        end)
+
         local topTen = {}
-        for i = 1, math.min(10, #userVehicles) do
-            table.insert(topTen, userVehicles[i].name .. ": " .. userVehicles[i].highestSpeed .. " MPH")
+        for i = 1, math.min(10, #userOwnedVehicles) do
+            table.insert(topTen, { name = userOwnedVehicles[i].name, speed = userOwnedVehicles[i].highestSpeed })
         end
-        notify("Top Ten Highest Speeds Reached:\n" .. table.concat(topTen, "\n"))
+
+        local header =
+            "+---------------------------+---------------------+\n" ..
+            "|       Vehicle Model       | Highest Speed (MPH) |\n" ..
+            "+---------------------------+---------------------+"
+        local horizontalLines =
+            "+---------------------------+---------------------+"
+        local footer =
+            "+---------------------------+---------------------+"
+        local formattedRows = {}
+
+        for index, vehicle in ipairs(topTen) do
+            table.insert(formattedRows, string.format("| %-25s | %19.3f |", vehicle.name, vehicle.speed))
+            if index < #topTen then
+                table.insert(formattedRows, horizontalLines)
+            end
+        end
+
+        local output = header .. "\n" .. table.concat(formattedRows, "\n") .. "\n" .. footer
+        notify("Top Ten Highest Speeds Reached:\n" .. output)
     end
 )
 
+-- Function to display top 10 accelerations using ASCII characters
 odometerMenu:add_action("Top 10 Accelerations",
     function()
-        local userVehicles = userOwnedVehicles
-        table.sort(userVehicles,
-            function(a, b)
-                return a.bestZeroToSixty < b.bestZeroToSixty
-            end
-        )
+        table.sort(userOwnedVehicles, function(a, b)
+            return a.bestZeroToSixty < b.bestZeroToSixty
+        end)
+
         local topTen = {}
-        for i = 1, math.min(10, #userVehicles) do
-            if userVehicles[i].bestZeroToSixty > 0.0 then
-                table.insert(topTen, userVehicles[i].name .. ": " .. userVehicles[i].bestZeroToSixty .. " seconds")
+        for i = 1, math.min(10, #userOwnedVehicles) do
+            if userOwnedVehicles[i].bestZeroToSixty > 0.0 then
+                table.insert(topTen, { name = userOwnedVehicles[i].name, time = userOwnedVehicles[i].bestZeroToSixty })
             end
         end
-        notify("Top Ten Fastest Accelerations:\n" .. table.concat(topTen, "\n"))
+
+        local header =
+            "+---------------------------+---------------------+\n" ..
+            "|       Vehicle Model       |   Time In Seconds   |\n" ..
+            "+---------------------------+---------------------+"
+        local horizontalLines =
+            "+---------------------------+---------------------+"
+        local footer =
+            "+---------------------------+---------------------+"
+        local formattedRows = {}
+
+        for index, vehicle in ipairs(topTen) do
+            table.insert(formattedRows, string.format("| %-25s | %19.3f |", vehicle.name, vehicle.time))
+            if index < #topTen then
+                table.insert(formattedRows, horizontalLines)
+            end
+        end
+
+        local output = header .. "\n" .. table.concat(formattedRows, "\n") .. "\n" .. footer
+        notify("Top Ten Fastest Accelerations:\n" .. output)
     end
 )
 
+-- Function to display top 10 odometer readings using ASCII characters
 odometerMenu:add_action("Top 10 Odometer Readings",
     function()
-        local userVehicles = userOwnedVehicles
-        table.sort(userVehicles,
-            function(a, b)
-                return a.odometer > b.odometer
-            end
-        )
+        table.sort(userOwnedVehicles, function(a, b)
+            return a.odometer > b.odometer
+        end)
+
         local topTen = {}
-        for i = 1, math.min(10, #userVehicles) do
-            table.insert(topTen, userVehicles[i].name .. ": " .. userVehicles[i].odometer .. " Miles")
+        for i = 1, math.min(10, #userOwnedVehicles) do
+            table.insert(topTen, { name = userOwnedVehicles[i].name, odometer = userOwnedVehicles[i].odometer })
         end
-        notify("Top 10 vehicles by odometer:\n" .. table.concat(topTen, "\n"))
+
+        local header =
+            "+---------------------------+---------------------+\n" ..
+            "|       Vehicle Model       |   Odometer (Miles)  |\n" ..
+            "+---------------------------+---------------------+"
+        local horizontalLines =
+            "+---------------------------+---------------------+"
+        local footer =
+            "+---------------------------+---------------------+"
+        local formattedRows = {}
+
+        for index, vehicle in ipairs(topTen) do
+            table.insert(formattedRows, string.format("| %-25s | %19.6f |", vehicle.name, vehicle.odometer))
+            if index < #topTen then
+                table.insert(formattedRows, horizontalLines)
+            end
+        end
+
+        local output = header .. "\n" .. table.concat(formattedRows, "\n") .. "\n" .. footer
+        notify("Top 10 Vehicles by Odometer:\n" .. output)
     end
 )
 
 odometerMenu:add_action("Print All Vehicle Data",
     function()
-        local vehicleData = {}
-        for vehicleNumber, vehicle in ipairs(userOwnedVehicles) do
-            table.insert(vehicleData, "Vehicle " .. vehicleNumber)
-            for name, variable in pairs(vehicle) do
-                if type(variable) == "table" then
-                    variable = table.concat(variable, ", ")
-                end
-                local infoString = tostring(name .. ": " .. tostring(variable))
-                table.insert(vehicleData, "  " .. infoString)
-            end
-            table.insert(vehicleData, "")
-        end
-        notify("All vehicles:\n" .. table.concat(vehicleData, "\n"))
-    end
-)
+        local isEmptyTable = function(t) return next(t) end
+        local boxWidth = 22 -- Width for each section
+    local blank = blankSpace(boxWidth)
+    local separator = string.rep("-", boxWidth) -- Creates a line for borders
+    local fullSeparator = "+" .. separator .. "+" .. separator .. "+" .. separator .. "+"
+    local tableOnlySeparator = "|" .. blank .. "+" .. separator .. "+" .. separator .. "+"
+    local nonTableSeparator = "+" .. separator .. "+" .. separator .. "|" .. blank .. "|"
+    local topSeparator = "+" .. separator .. "+" .. separator .. "+" .. separator .. "+"
+    local vehicleData = {}
 
+    -- Function to center text within a fixed width
+    local function centerText(text, width)
+        local padding = width - #text
+        local leftPadding = math.floor(padding / 2)
+        local rightPadding = padding - leftPadding
+        return string.rep(" ", leftPadding) .. text .. string.rep(" ", rightPadding)
+    end
+
+    for vehicleNumber, vehicle in ipairs(userOwnedVehicles) do
+        -- Header for each vehicle
+        table.insert(vehicleData, string.format("+%s+%s+%s+", separator, separator, separator))
+        table.insert(vehicleData, string.format("| %-20s | %-20s | %-20s |", "", centerText("Vehicle: " .. vehicleNumber, 20), ""))
+        table.insert(vehicleData, topSeparator)
+
+        -- Separate key-value pairs and tables
+        local keyValuePairs = {}
+        local tables = {}
+
+        for name, variable in pairs(vehicle) do
+            if type(variable) == "table" then
+                table.insert(tables, { name = name, content = variable })
+            else
+                table.insert(keyValuePairs, { name = name, value = variable })
+            end
+        end
+
+        -- Display key-value pairs first
+        local kvpCount = #keyValuePairs
+        for i, pair in ipairs(keyValuePairs) do
+            -- Check if the current key-value pair is the last one
+            if i == kvpCount then
+                table.insert(vehicleData, string.format("| %-20s | %-20s | %-20s |", centerText(pair.name, 20), centerText(tostring(pair.value), 20), ""))
+                table.insert(vehicleData, fullSeparator)
+            else
+                table.insert(vehicleData, string.format("| %-20s | %-20s | %-20s |", centerText(pair.name, 20), centerText(tostring(pair.value), 20), ""))
+                table.insert(vehicleData, nonTableSeparator)
+            end
+        end
+
+        -- Display tables afterwards
+        for tblIndex, tbl in ipairs(tables) do
+            if tbl.name == "customECU" and isEmptyTable(tbl.content) then
+                table.insert(vehicleData, string.format("| %-20s | %-20s | %-20s |", centerText(tbl.name, 20), centerText("No ECU", 20), centerText("No ECU", 20)))
+                if tblIndex < #tables then
+                    table.insert(vehicleData, fullSeparator)
+                end
+            else
+                local subTableCount = 0
+                for _ in pairs(tbl.content) do
+                    subTableCount = subTableCount + 1
+                end
+
+                local subTableIndex = 0
+                for key, val in pairs(tbl.content) do
+                    subTableIndex = subTableIndex + 1
+                    if subTableIndex == subTableCount and tblIndex == #tables then
+                        table.insert(vehicleData, string.format("| %-20s | %-20s | %-20s |", "", centerText(key, 20), centerText(tostring(val), 20)))
+                    elseif subTableIndex == subTableCount then
+                        table.insert(vehicleData, string.format("| %-20s | %-20s | %-20s |", "", centerText(key, 20), centerText(tostring(val), 20)))
+                        table.insert(vehicleData, fullSeparator)
+                    elseif subTableIndex == 1 then
+                        table.insert(vehicleData, string.format("| %-20s | %-20s | %-20s |", centerText(tbl.name, 20), centerText(key, 20), centerText(tostring(val), 20)))
+                        table.insert(vehicleData, tableOnlySeparator)
+                    else
+                        table.insert(vehicleData, string.format("| %-20s | %-20s | %-20s |", "", centerText(key, 20), centerText(tostring(val), 20)))
+                        table.insert(vehicleData, tableOnlySeparator)
+                    end
+                end
+            end
+        end
+        table.insert(vehicleData, string.format("+%s+%s+%s+", separator, separator, separator))
+    end
+
+    local output = table.concat(vehicleData, "\n")
+    notify("All Vehicles Data:\n" .. output)
+end
+)
 
 -- Settings Submenu
 local settingsMenu = mainmenu:add_submenu("Settings")
 
--- Tunes Submenu
-local tunesSettings = settingsMenu:add_submenu("Tuner Settings")
-
--- controls automatically tuning a vehicle
-tunesSettings:add_toggle("Auto Tune Vehicles",
-    function()
-        return settings.tuner.autoTune
-    end,
-    function(bool)
-        settings.tuner.autoTune = bool
-        reagansECU:startTuner()
-        utilities:saveUserSettings()
-    end
-)
-
--- controls auto run on script startup
-tunesSettings:add_toggle("Run On Startup",
-    function()
-        return settings.tuner.autoStart
-    end,
-    function(bool)
-        settings.tuner.autoStart = bool
-        utilities:saveUserSettings()
-    end
-)
-
--- Odometer Submenu
-local odometerSettings = settingsMenu:add_submenu("Odometer Settings")
-
-odometerSettings:add_float_range("Update Delay", 1, 0.01, 1,
-    function()
-        return settings.odometer.delay
-    end,
-    function(number)
-        settings.odometer.delay = number
-        utilities:saveUserSettings()
-    end
-)
-
-odometerSettings:add_toggle("Automatic Mode",
-    function()
-        return settings.odometer.autorun
-    end,
-    function(value)
-        settings.odometer.autorun = value
-        utilities:saveUserSettings()
-        notify("Odometer autorun set to " .. tostring(value))
-    end
-)
-
--- Debugging Submenu
-local debugMenu = settingsMenu:add_submenu("Debugging")
-
--- controld debug prints to the console
-debugMenu:add_toggle("Debug Prints",
-    function()
-        return settings.debugMode
-    end,
-    function(bool)
-        settings.debugMode = bool
-        utilities:saveUserSettings()
-    end
-)
-
-
-local debugLoggingSettingsMenu = debugMenu:add_submenu("Debug Logging Settings")
--- Utility functions for adjusting test parameters via the menu
+-- menu functions
+local getAutoTune = function() return settings.tuner.autoTune end
+local setAutoTune = function(bool)
+    settings.tuner.autoTune = bool
+    utilities:saveUserSettings()
+end
+local getTunerOnStartup = function() return settings.tuner.autoStart end
+local setTunerOnStartup = function(bool)
+    settings.tuner.autoStart = bool
+    utilities:saveUserSettings()
+end
+local getAutoTuneDelay = function() return settings.tuner.autoTuneDelay end
+local setAutoTuneDelay = function(value) settings.tuner.autoTuneDelay = value end
+local getOdometerDelay = function() return settings.odometer.delay end
+local setOdometerDelay = function(value) settings.odometer.delay = value end
+local getOdometerAuto = function() return settings.odometer.autorun end
+local setOdometerAuto = function(bool) settings.odometer.autorun = bool end
+local getDebugPrints = function() return settings.debugMode end
+local setDebugPrints = function(bool) settings.debugMode = bool end
 local getDelay = function() return settings.debugSettings.delay end
-local setDelay = function(value) settings.debugSettings.delay = value utilities:saveUserSettings() end
+local setDelay = function(value)
+    settings.debugSettings.delay = value
+    utilities:saveUserSettings()
+end
 local getMaxFileSize = function() return settings.debugSettings.maxLogSize end
-local setgetMaxFileSize = function(value) settings.debugSettings.maxLogSize = value utilities:saveUserSettings() end
+local setgetMaxFileSize = function(value)
+    settings.debugSettings.maxLogSize = value
+    utilities:saveUserSettings()
+end
 local getDebugLoggingState = function() return settings.debugLogging end
-local setDebugLoggingState = function(bool) settings.debugLogging = bool utilities:saveUserSettings() end
+local setDebugLoggingState = function(bool)
+    settings.debugLogging = bool
+    utilities:saveUserSettings()
+end
+local getUserPrints = function() return settings.userPrints end
+local setUserPrints = function(bool) settings.userPrints = bool end
+local deleteSavedVehicles = function()
+    userOwnedVehicles = {}
+    saveUserVehiclesData()
+end
+local resetSavedSettings = function()
+    settings = settingsDefaults
+    utilities:saveUserSettings()
+end
+local resetEverything = function()
+    deleteSavedVehicles()
+    resetSavedSettings()
+end
+local printExpertHelper = function() print(credits.expert) end
+local printDeveloper = function() print(credits.developer) end
+local printQA = function() print(credits.QA) end
 
-function addDebugSettingsMenu()
--- controls logging of debug prints, regardless of print settings
+function addSettingsMenu()
+    local tunesSettings = settingsMenu:add_submenu("Tuner Settings")
+    local odometerSettings = settingsMenu:add_submenu("Odometer Settings")
+    local debugMenu = settingsMenu:add_submenu("Debugging")
+    local debugLoggingSettingsMenu = debugMenu:add_submenu("Debug Logging Settings")
+    local memorySettings = settingsMenu:add_submenu("Memory/Saved Data")
+    local creditsMenu = settingsMenu:add_submenu("Credits")
+
+    tunesSettings:add_toggle("Auto Tune Vehicles", getAutoTune, setAutoTune)
+    tunesSettings:add_toggle("Run On Startup", getTunerOnStartup, setTunerOnStartup)
+    tunesSettings:add_float_range("Auto Tune Delay", 0.1, 0.1, 1, getAutoTuneDelay, setAutoTuneDelay)
+    odometerSettings:add_float_range("Update Delay", 0.01, 0.01, 1, getOdometerDelay, setOdometerDelay)
+    odometerSettings:add_toggle("Automatic Mode", getOdometerAuto, setOdometerAuto)
+    debugMenu:add_toggle("Debug Prints", getDebugPrints, setDebugPrints)
     debugLoggingSettingsMenu:add_toggle("Debug Logging", getDebugLoggingState, setDebugLoggingState)
     debugLoggingSettingsMenu:add_int_range("Max File Size", 100, 100, 10000, getMaxFileSize, setgetMaxFileSize)
     debugLoggingSettingsMenu:add_float_range("File Operation Delay", 0.01, 0.01, 1, getDelay, setDelay)
+    settingsMenu:add_toggle("User Notifications", getUserPrints, setUserPrints)
+    memorySettings:add_action("Delete All Saved Vehicles", deleteSavedVehicles)
+    memorySettings:add_action("Reset Saved Settings", resetSavedSettings)
+    memorySettings:add_action("Reset EVERYTHING", resetEverything)
+    creditsMenu:add_action("Click a Person's Title To", rip)
+    creditsMenu:add_action("Display Their Credits!", rip)
+    creditsMenu:add_action("", rip)
+    creditsMenu:add_action("Developer", printDeveloper)
+    creditsMenu:add_action("QA Analyst", printQA)
+    creditsMenu:add_action("Expert Help", printExpertHelper)
 end
 
-addDebugSettingsMenu()
-
-settingsMenu:add_toggle("User Notifications",
-    function()
-        return settings.userPrints
-    end,
-    function(bool)
-        settings.userPrints = bool
-        utilities:saveUserSettings()
-    end
-)
-
--- Memory Submenu
-local memorySettings = settingsMenu:add_submenu("Memory/Saved Data")
-
-memorySettings:add_action("Delete All Saved Vehicles",
-    function()
-        userOwnedVehicles = {}
-        local success, err = pcall(function() saveUserVehiclesData() end
-        )
-        if success then
-            notify("All saved vehicles deleted.")
-        else
-            debugPrint("Error deleting saved vehicles: " .. tostring(err))
-        end
-    end
-)
-memorySettings:add_action("Reset Saved Settings",
-    function()
-        settings = settingsDefaults
-        utilities:saveUserSettings()
-        notify("Saved settings reset to default.")
-    end
-)
-memorySettings:add_action("Reset EVERYTHING",
-    function()
-        userOwnedVehicles = {}
-        settings = settingsDefaults
-        utilities:saveUserSettings()
-        local success, err = pcall(function() saveUserVehiclesData() end
-        )
-        if success then
-            notify("All data reset.")
-        else
-            debugPrint("Error resetting all data: " .. tostring(err))
-        end
-    end
-)
-
--- Credits Submenu
-local creditsMenu = settingsMenu:add_submenu("Credits")
-
-creditsMenu:add_action("Click a Person's Title To",
-    function() rip() end
-)
-creditsMenu:add_action("Display Their Credits!",
-    function() rip() end
-)
-creditsMenu:add_action("",
-    function() rip() end
-)
-creditsMenu:add_action("Developer",
-    function()
-        print(credits.developer)
-    end
-)
-creditsMenu:add_action("QA Analyst",
-    function()
-        print(credits.QA)
-    end
-)
-creditsMenu:add_action("Expert Help",
-    function()
-        print(credits.expert)
-    end
-)
-
---#endregion
+addSettingsMenu()
 
 debugPrint("Loading Settings")
 utilities:loadUserSettings()
