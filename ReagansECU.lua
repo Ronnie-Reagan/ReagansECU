@@ -101,6 +101,12 @@ local tuning_pointers = {
         { name = "Boost Enabled",                   type = "bool",  key = "boost_enabled",                   set = "set_boost_enabled",                   get = "get_boost_enabled",                   default = false },
     },
     handling = {
+        { name = "Traction Bias Front",                type = "float",   key = "traction_bias_front",                set = "set_traction_bias_front",                get = "get_traction_bias_front",                min = 0.0,                        max = 1.0,     step = 0.01, default = 0.5 },
+        { name = "Traction Curve Lateral",             type = "float",   key = "traction_curve_lateral",             set = "set_traction_curve_lateral",             get = "get_traction_curve_lateral",             min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
+        { name = "Traction Curve Max",                 type = "float",   key = "traction_curve_max",                 set = "set_traction_curve_max",                 get = "get_traction_curve_max",                 min = 0.0,                        max = 100.0,   step = 0.1,  default = 1.0 },
+        { name = "Traction Curve Min",                 type = "float",   key = "traction_curve_min",                 set = "set_traction_curve_min",                 get = "get_traction_curve_min",                 min = 0.0,                        max = 100.0,   step = 0.1,  default = 1.0 },
+        { name = "Traction Loss Multiplier",           type = "float",   key = "traction_loss_multiplier",           set = "set_traction_loss_multiplier",           get = "get_traction_loss_multiplier",           min = 0.0,                        max = 50.0,    step = 0.1,  default = 1.0 },
+        { name = "Traction Spring Delta Max",          type = "float",   key = "traction_spring_delta_max",          set = "set_traction_spring_delta_max",          get = "get_traction_spring_delta_max",          min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
         { name = "Anti Roll Bar Bias Front",           type = "float",   key = "anti_roll_bar_bias_front",           set = "set_anti_roll_bar_bias_front",           get = "get_anti_roll_bar_bias_front",           min = 0.0,                        max = 1.0,     step = 0.01, default = 0.5 },
         { name = "Anti Roll Bar Force",                type = "float",   key = "anti_roll_bar_force",                set = "set_anti_roll_bar_force",                get = "get_anti_roll_bar_force",                min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
         { name = "Brake Bias Front",                   type = "float",   key = "brake_bias_front",                   set = "set_brake_bias_front",                   get = "get_brake_bias_front",                   min = 0.0,                        max = 1.0,     step = 0.01, default = 0.5 },
@@ -110,7 +116,7 @@ local tuning_pointers = {
         { name = "Inertia Multiplier",                 type = "vector3", key = "inertia_multiplier",                 set = "set_inertia_multiplier",                 get = "get_inertia_multiplier",                 default = { x = 1, y = 1, z = 1 } },
         { name = "Initial Drag Coeff",                 type = "float",   key = "initial_drag_coeff",                 set = "set_initial_drag_coeff",                 get = "get_initial_drag_coeff",                 min = 0.0,                        max = 10.0,    step = 0.01, default = 1.0 },
         { name = "Low Speed Traction Loss Multiplier", type = "float",   key = "low_speed_traction_loss_multiplier", set = "set_low_speed_traction_loss_multiplier", get = "get_low_speed_traction_loss_multiplier", min = 0.0,                        max = 5.0,     step = 0.1,  default = 1.0 },
-        { name = "Mass",                               type = "float",   key = "mass",                               set = "set_mass",                               get = "get_mass",                               min = 0.0,                        max = 10000.0, step = 1.0,  default = 1500.0 },
+        { name = "Mass",                               type = "float",   key = "mass",                               set = "set_mass",                               get = "get_mass",                               min = 0.0,                        max = 10000.0, step = 100.0,  default = 1500.0 },
         { name = "Drift Tyres Enabled",                type = "bool",    key = "drift_tyres_enabled",                set = "set_drift_tyres_enabled",                get = "get_drift_tyres_enabled",                default = false },
         { name = "Drift Vehicle Reduced Suspension",   type = "bool",    key = "drift_vehicle_reduced_suspension",   set = "set_drift_vehicle_reduced_suspension",   get = "get_drift_vehicle_reduced_suspension",   default = false },
         { name = "Drive Bias Front",                   type = "float",   key = "drive_bias_front",                   set = "set_drive_bias_front",                   get = "get_drive_bias_front",                   min = 0.0,                        max = 1.0,     step = 0.01, default = 0.5 },
@@ -125,12 +131,6 @@ local tuning_pointers = {
         { name = "Suspension Rebound Damp",            type = "float",   key = "suspension_rebound_damp",            set = "set_suspension_rebound_damp",            get = "get_suspension_rebound_damp",            min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
         { name = "Suspension Upper Limit",             type = "float",   key = "suspension_upper_limit",             set = "set_suspension_upper_limit",             get = "get_suspension_upper_limit",             min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
         { name = "Camber Stiffness",                   type = "float",   key = "camber_stiffness",                   set = "set_camber_stiffness",                   get = "get_camber_stiffness",                   min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
-        { name = "Traction Bias Front",                type = "float",   key = "traction_bias_front",                set = "set_traction_bias_front",                get = "get_traction_bias_front",                min = 0.0,                        max = 1.0,     step = 0.01, default = 0.5 },
-        { name = "Traction Curve Lateral",             type = "float",   key = "traction_curve_lateral",             set = "set_traction_curve_lateral",             get = "get_traction_curve_lateral",             min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
-        { name = "Traction Curve Max",                 type = "float",   key = "traction_curve_max",                 set = "set_traction_curve_max",                 get = "get_traction_curve_max",                 min = 0.0,                        max = 100.0,   step = 0.1,  default = 1.0 },
-        { name = "Traction Curve Min",                 type = "float",   key = "traction_curve_min",                 set = "set_traction_curve_min",                 get = "get_traction_curve_min",                 min = 0.0,                        max = 100.0,   step = 0.1,  default = 1.0 },
-        { name = "Traction Loss Multiplier",           type = "float",   key = "traction_loss_multiplier",           set = "set_traction_loss_multiplier",           get = "get_traction_loss_multiplier",           min = 0.0,                        max = 50.0,    step = 0.1,  default = 1.0 },
-        { name = "Traction Spring Delta Max",          type = "float",   key = "traction_spring_delta_max",          set = "set_traction_spring_delta_max",          get = "get_traction_spring_delta_max",          min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
         { name = "Gravity",                            type = "float",   key = "gravity",                            set = "set_gravity",                            get = "get_gravity",                            min = -20.0,                      max = 200.0,   step = 1.0,  default = 9.81 },
         { name = "Roll Centre Height Front",           type = "float",   key = "roll_centre_height_front",           set = "set_roll_centre_height_front",           get = "get_roll_centre_height_front",           min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
         { name = "Roll Centre Height Rear",            type = "float",   key = "roll_centre_height_rear",            set = "set_roll_centre_height_rear",            get = "get_roll_centre_height_rear",            min = 0.0,                        max = 10.0,    step = 0.1,  default = 1.0 },
@@ -166,7 +166,7 @@ local tuning_pointers = {
         { name = "Position",                    type = "vector3", key = "position",                    set = "set_position",                    get = "get_position",                    default = { x = 0, y = 0, z = 0 } },
         { name = "Rotation",                    type = "vector3", key = "rotation",                    set = "set_rotation",                    get = "get_rotation",                    default = { x = 0, y = 0, z = 0 } },
         { name = "Weapon Damage Multiplier",    type = "float",   key = "weapon_damage_multiplier",    set = "set_weapon_damage_multiplier",    get = "get_weapon_damage_multiplier",    min = 0.0,                        max = 10.0,  step = 0.1, default = 1.0 },
-        { name = "Door Lock State",             type = "int",     key = "door_lock_state",             set = "set_door_lock_state",             get = "get_door_lock_state",             min = 0,                          max = 10,    step = 1,   default = 0 },
+        { name = "Door Lock State",             type = "int",     key = "door_lock_state",             set = "set_door_lock_state",             get = "get_door_lock_state",             min = 0,                          max = 2,    step = 1,   default = 0 },
     },
     getterOnly = {
         { name = "Velocity",           type = "vector3", key = "velocity",           get = "get_velocity" },
@@ -2020,6 +2020,8 @@ function addSettingsMenu()
 end
 
 addSettingsMenu()
+
+--#endregion
 
 debugPrint("Loading Settings")
 utilities:loadUserSettings()
